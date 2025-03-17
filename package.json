@@ -1,0 +1,18 @@
+{
+  "name": "com.azzazello.LightDI",
+  "version": "1.0.0",
+  "displayName": "LightDI",
+  "description": "",
+  "unity": "2020.3",
+  "dependencies": {
+  },
+  "keywords": [
+  "LightDI",
+  "DI"
+  ],
+  "author": {
+    "name": "Azzazelloqq",
+    "email": "bog22232@ya.ru",
+    "url": "https://github.com/Azzazelloqq"
+  }
+}
