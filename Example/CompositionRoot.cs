@@ -10,6 +10,9 @@ public class CompositionRoot
 		
 		container.RegisterAsSingleton<IServiceA>(() => new ServiceA());
 		container.RegisterAsSingleton<IWeapon>(() => new Sword());
+
+		var gameManager = GameManagerFactory.CreateGameManager(10);
+		gameManager.RunGame();
 	}
 }
 }
