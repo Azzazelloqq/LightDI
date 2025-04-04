@@ -232,4 +232,4 @@ Please visit our [Issues](https://github.com/Azzazelloqq/LightDI/issues) page or
 ### 📄 License
 
 This project is licensed under the MIT License.
-See the LICENSE file for full details.
+See the [LICENSE](https://github.com/Azzazelloqq/LightDI/blob/main/LICENSE) file for full details.
