@@ -1,0 +1,196 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace LightDI.Runtime
+{
+internal class LightDiContainer : IDiContainer
+{
+	private readonly bool _disposeRegistered;
+	private readonly Dictionary<Type, RegistrationInfo> _registrations = new();
+	private readonly List<IDisposable> _disposables = new();
+	private bool _disposed;
+	private Action _onDispose;
+
+	internal LightDiContainer(bool disposeRegistered = true)
+	{
+		_disposeRegistered = disposeRegistered;
+	}
+
+	internal void Register<T>(Func<T> factory, Lifetime lifetime) where T : class
+	{
+		var type = typeof(T);
+		var reg = new RegistrationInfo(
+			_ => factory(),
+			lifetime
+		);
+		
+		_registrations[type] = reg;
+	}
+	
+	public void RegisterAsSingleton<T>(Func<T> factory) where T : class
+	{
+		var type = typeof(T);
+		var reg = new RegistrationInfo(
+			_ => factory(),
+			Lifetime.Singleton
+		);
+		
+		_registrations[type] = reg;
+	}
+
+	public void RegisterAsSingleton<T>(T singleton) where T : class
+	{
+		var type = typeof(T);
+		var reg = new RegistrationInfo(
+			singleton,
+			Lifetime.Singleton
+		);
+		
+		_registrations[type] = reg;	}
+
+	public void RegisterAsTransient<T>(Func<T> factory) where T : class
+	{
+		var type = typeof(T);
+		var reg = new RegistrationInfo(
+			_ => factory(),
+			Lifetime.Transient
+		);
+		
+		_registrations[type] = reg;
+	}
+
+	bool IDiContainer.TryResolve<T>(out T instance)
+	{
+		if (_disposed)
+		{
+			instance = null;
+			return false;
+		}
+		
+		var type = typeof(T);
+		if (!_registrations.TryGetValue(type, out var registrationInfo))
+		{
+			instance = null;
+			return false;
+		}
+		
+		switch (registrationInfo.Lifetime)
+		{
+			case Lifetime.Transient:
+				instance =  TryResolveTransient<T>(registrationInfo);
+				return true;
+			case Lifetime.Singleton:
+				 instance = ResolveSingleton<T>(registrationInfo);
+				return true;
+			default:
+				throw new ArgumentOutOfRangeException();
+		}
+
+		return false;
+	}
+
+	T IDiContainer.Resolve<T>() where T : class
+	{
+		if (_disposed)
+		{
+			throw new ObjectDisposedException(nameof(LightDiContainer),
+				"Cannot resolve from a disposed container.");
+		}
+
+		var type = typeof(T);
+		if (!_registrations.TryGetValue(type, out var registrationInfo))
+		{
+			throw new Exception($"Service of type {type.FullName} is not registered.");
+		}
+
+		switch (registrationInfo.Lifetime)
+		{
+			case Lifetime.Transient:
+				return TryResolveTransient<T>(registrationInfo);
+			case Lifetime.Singleton:
+				return ResolveSingleton<T>(registrationInfo);
+			default:
+				throw new ArgumentOutOfRangeException();
+		}
+	}
+
+	internal void SubscribeOnDisposeCallback(Action onDispose)
+	{
+		if (_disposed)
+		{
+			throw new Exception("Cannot subscribe to dispose callback on a disposed container.");
+		}
+		
+		_onDispose = onDispose;
+	}
+	
+	private T ResolveSingleton<T>(RegistrationInfo registrationInfo) where T : class
+	{
+		var cachedInstance = registrationInfo.CachedInstance;
+		
+		if (cachedInstance == null)
+		{
+			var instance = registrationInfo.Factory(this);
+			registrationInfo.CachedInstance = instance;
+			HandleNewlyCreated(instance);
+		}
+
+		if (registrationInfo.CachedInstance is T concreteInstance)
+		{
+			return concreteInstance;
+		}
+		
+		throw new Exception($"Dependency type mismatch. You tried to resolve dependency as type {typeof(T).FullName} " +
+							$"but created dependency is of type {registrationInfo.CachedInstance.GetType().FullName}. " +
+							$"Maybe you forgot to register it or registered it with a different type.");
+	}
+	
+	private T TryResolveTransient<T>(RegistrationInfo registrationInfo) where T : class
+	{
+		var instance = registrationInfo.Factory(this);
+		HandleNewlyCreated(instance);
+			
+		if (instance is T concreteInstance)
+		{
+			return concreteInstance;
+		}
+
+		throw new Exception($"Dependency type mismatch. You tried to resolve dependency as type {typeof(T).FullName} " +
+							$"but created dependency is of type {instance.GetType().FullName}. " +
+							$"Maybe you forgot to register it or registered it with a different type.");
+	}
+
+	private void HandleNewlyCreated(object obj)
+	{
+		if (obj is IDisposable disposable)
+		{
+			_disposables.Add(disposable);
+		}
+	}
+
+	public void Dispose()
+	{
+		if (_disposed)
+		{
+			return;
+		}
+
+		if (!_disposeRegistered)
+		{
+			return;
+		}
+
+		foreach (var disposable in _disposables)
+		{
+			disposable.Dispose();
+		}
+
+		_disposables.Clear();
+		_registrations.Clear();
+		
+		_disposed = true;
+		
+		_onDispose?.Invoke();
+	}
+}
+}
