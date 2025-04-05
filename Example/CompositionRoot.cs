@@ -8,8 +8,8 @@ public class CompositionRoot
 	{
 		var container = DiContainerFactory.CreateContainer();
 		
-		container.RegisterAsSingleton<IServiceA>(() => new ServiceA());
-		container.RegisterAsSingleton<IWeapon>(() => new Sword());
+		container.RegisterAsSingletonLazy<IServiceA>(() => new ServiceA());
+		container.RegisterAsSingletonLazy<IWeapon>(() => new Sword());
 
 		var gameManager = GameManagerFactory.CreateGameManager(10);
 		gameManager.RunGame();

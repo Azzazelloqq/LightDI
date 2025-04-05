@@ -27,7 +27,7 @@ internal class LightDiContainer : IDiContainer
 		_registrations[type] = reg;
 	}
 	
-	public void RegisterAsSingleton<T>(Func<T> factory) where T : class
+	public void RegisterAsSingletonLazy<T>(Func<T> factory) where T : class
 	{
 		var type = typeof(T);
 		var reg = new RegistrationInfo(
