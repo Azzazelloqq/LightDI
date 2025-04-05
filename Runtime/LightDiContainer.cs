@@ -3,6 +3,10 @@ using System.Collections.Generic;
 
 namespace LightDI.Runtime
 {
+/// <summary>
+/// A lightweight dependency injection container implementation.
+/// Supports registration of services as Singleton (lazy) and Transient.
+/// </summary>
 internal class LightDiContainer : IDiContainer
 {
 	private readonly bool _disposeRegistered;
@@ -11,11 +15,22 @@ internal class LightDiContainer : IDiContainer
 	private bool _disposed;
 	private Action _onDispose;
 
+	/// <summary>
+	/// Initializes a new instance of the <see cref="LightDiContainer"/> class.
+	/// </summary>
+	/// <param name="disposeRegistered">If true, disposable services are disposed when the container is disposed.</param>
 	internal LightDiContainer(bool disposeRegistered = true)
 	{
 		_disposeRegistered = disposeRegistered;
 	}
 
+	/// <summary>
+	/// Registers a service with the specified factory and lifetime.
+	/// This method is used internally by the container.
+	/// </summary>
+	/// <typeparam name="T">The service type.</typeparam>
+	/// <param name="factory">A factory function to create the service.</param>
+	/// <param name="lifetime">The lifetime of the service.</param>
 	internal void Register<T>(Func<T> factory, Lifetime lifetime) where T : class
 	{
 		var type = typeof(T);
@@ -27,6 +42,7 @@ internal class LightDiContainer : IDiContainer
 		_registrations[type] = reg;
 	}
 	
+	/// <inheritdoc/>
 	public void RegisterAsSingletonLazy<T>(Func<T> factory) where T : class
 	{
 		var type = typeof(T);
@@ -38,6 +54,7 @@ internal class LightDiContainer : IDiContainer
 		_registrations[type] = reg;
 	}
 
+	/// <inheritdoc/>
 	public void RegisterAsSingleton<T>(T singleton) where T : class
 	{
 		var type = typeof(T);
@@ -48,6 +65,7 @@ internal class LightDiContainer : IDiContainer
 		
 		_registrations[type] = reg;	}
 
+	/// <inheritdoc/>
 	public void RegisterAsTransient<T>(Func<T> factory) where T : class
 	{
 		var type = typeof(T);
@@ -59,6 +77,7 @@ internal class LightDiContainer : IDiContainer
 		_registrations[type] = reg;
 	}
 
+	/// <inheritdoc/>
 	bool IDiContainer.TryResolve<T>(out T instance)
 	{
 		if (_disposed)
@@ -89,6 +108,7 @@ internal class LightDiContainer : IDiContainer
 		return false;
 	}
 
+	/// <inheritdoc/>
 	T IDiContainer.Resolve<T>() where T : class
 	{
 		if (_disposed)
@@ -113,7 +133,12 @@ internal class LightDiContainer : IDiContainer
 				throw new ArgumentOutOfRangeException();
 		}
 	}
-
+	
+	/// <summary>
+	/// Subscribes to the container's dispose callback.
+	/// The provided action will be invoked when the container is disposed.
+	/// </summary>
+	/// <param name="onDispose">The callback to invoke upon disposal.</param>
 	internal void SubscribeOnDisposeCallback(Action onDispose)
 	{
 		if (_disposed)
@@ -124,6 +149,11 @@ internal class LightDiContainer : IDiContainer
 		_onDispose = onDispose;
 	}
 	
+	/// <summary>
+	/// Subscribes to the container's dispose callback.
+	/// The provided action will be invoked when the container is disposed.
+	/// </summary>
+	/// <param name="onDispose">The callback to invoke upon disposal.</param>
 	private T ResolveSingleton<T>(RegistrationInfo registrationInfo) where T : class
 	{
 		var cachedInstance = registrationInfo.CachedInstance;
@@ -145,6 +175,9 @@ internal class LightDiContainer : IDiContainer
 							$"Maybe you forgot to register it or registered it with a different type.");
 	}
 	
+	/// <summary>
+	/// Resolves a transient service by creating a new instance and handling it if it implements IDisposable.
+	/// </summary>
 	private T TryResolveTransient<T>(RegistrationInfo registrationInfo) where T : class
 	{
 		var instance = registrationInfo.Factory(this);
@@ -160,6 +193,9 @@ internal class LightDiContainer : IDiContainer
 							$"Maybe you forgot to register it or registered it with a different type.");
 	}
 
+	/// <summary>
+	/// If a newly created instance implements IDisposable, it is added to the disposables list.
+	/// </summary>
 	private void HandleNewlyCreated(object obj)
 	{
 		if (obj is IDisposable disposable)
@@ -168,6 +204,10 @@ internal class LightDiContainer : IDiContainer
 		}
 	}
 
+	/// <summary>
+	/// Disposes the container by calling Dispose() on all registered disposable services,
+	/// clearing all registrations, and invoking the dispose callback.
+	/// </summary>
 	public void Dispose()
 	{
 		if (_disposed)
