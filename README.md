@@ -25,9 +25,6 @@ LightDI is a lightweight, high-performance dependency injection container for .N
   Containers created via `DiContainerFactory` automatically register with the global `DiContainerProvider`.  
   > **Warning:** Direct calls to `DiContainerProvider.Resolve<T>()` should be used **only in critical cases**.
 
-- **Extensibility & Future Enhancements:**  
-  Designed for easy extension—fluent APIs, cycle detection, and sub-container (scoped) support can be added later.
-
 ---
 
 ## 📦 Project Structure
@@ -207,10 +204,6 @@ When your container is no longer needed (for example, when a scene is unloaded i
 container.Dispose();
 ```
 > **Remember: Proper disposal is key for managing resources and ensuring your application remains efficient.**
-
-### Cycle Detection 🔄
-
-Future enhancements will include cyclic dependency detection to catch infinite loops during service resolution. The container will track the chain of currently resolving types and throw a descriptive exception if a cycle is detected, helping you maintain a healthy dependency graph.
 
 ### ⚠️ Known Limitations
 
