@@ -1,7 +1,7 @@
 # LightDI 🚀
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)  
-[![GitHub release (latest by SemVer)](https://img.shields.io/github/release/Azzazelloqq/LightDI.svg?style=flat-square)](https://github.com/Azzazelloqq/LightDI/releases)
+[![GitHub release (latest by SemVer)](https://img.shields.io/github/release/Azzazelloqq/lightdi.svg?style=flat-square&cacheSeconds=86400)](https://github.com/Azzazelloqq/LightDI/releases)
 
 LightDI is a lightweight, high-performance dependency injection container for .NET and Unity projects. It leverages Roslyn Source Generators to produce compile-time factories for constructor injection—**eliminating runtime reflection overhead** and delivering superior performance. While you can access the container directly via the `DiContainerProvider`, it is **strongly recommended** to use the generated factories and constructor injection for optimal efficiency.
 
