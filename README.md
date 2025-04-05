@@ -217,6 +217,22 @@ Direct calls via DiContainerProvider.Resolve<T>() are available but are discoura
 - MonoBehaviour Support:
 LightDI currently does not support dependency injection for MonoBehaviour classes. For Unity-specific DI with MonoBehaviours, consider using frameworks like Zenject or VContainer.
 
+### ⚠️ Important Note for Unity Projects with Domain Reload Disabled
+
+When domain reload is disabled in Unity, static data—such as the global container registry in `DiContainerProvider`—may persist between scene loads. This persistence can lead to the accumulation of outdated or unnecessary data and potential memory leaks.
+
+> **Tip:**  
+> To maintain a clean state between scenes or during application shutdown, **always call** `DiContainerProvider.Dispose()` to clear the static data held by the global container registry.
+
+### Example
+
+In your scene transition or shutdown code, add the following call:
+
+```csharp
+// For example, during scene unload or application exit:
+DiContainerProvider.Dispose();
+```
+
 ### 📚 Contributing
 
 Contributions, issues, and feature requests are warmly welcome!
