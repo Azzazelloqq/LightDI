@@ -198,6 +198,11 @@ internal class LightDiContainer : IDiContainer
 	/// </summary>
 	private void HandleNewlyCreated(object obj)
 	{
+		if (!_disposeRegistered)
+		{
+			return;
+		}
+		
 		if (obj is IDisposable disposable)
 		{
 			_disposables.Add(disposable);
@@ -215,17 +220,16 @@ internal class LightDiContainer : IDiContainer
 			return;
 		}
 
-		if (!_disposeRegistered)
+		if (_disposeRegistered)
 		{
-			return;
+			foreach (var disposable in _disposables)
+			{
+				disposable.Dispose();
+			}
+			
+			_disposables.Clear();
 		}
 
-		foreach (var disposable in _disposables)
-		{
-			disposable.Dispose();
-		}
-
-		_disposables.Clear();
 		_registrations.Clear();
 		
 		_disposed = true;
