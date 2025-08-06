@@ -63,7 +63,9 @@ internal class LightDiContainer : IDiContainer
 			Lifetime.Singleton
 		);
 		
-		_registrations[type] = reg;	}
+		_registrations[type] = reg;
+		HandleNewlyCreated(singleton);
+	}
 
 	/// <inheritdoc/>
 	public void RegisterAsTransient<T>(Func<T> factory) where T : class
@@ -104,8 +106,6 @@ internal class LightDiContainer : IDiContainer
 			default:
 				throw new ArgumentOutOfRangeException();
 		}
-
-		return false;
 	}
 
 	/// <inheritdoc/>

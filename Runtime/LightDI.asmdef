@@ -9,5 +9,8 @@
     "autoReferenced": true,
     "defineConstraints": [],
     "versionDefines": [],
-    "noEngineReferences": false
+    "noEngineReferences": false,
+    "internalsVisibleTo": [
+        "LightDI.Tests"
+    ]
 }

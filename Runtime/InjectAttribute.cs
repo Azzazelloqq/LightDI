@@ -7,7 +7,7 @@ namespace LightDI.Runtime
 /// Indicates that a field or constructor parameter should be injected by the DI container.
 /// </summary>
 [MeansImplicitUse]
-[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Field)]
+[AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Field, Inherited = false)]
 public class InjectAttribute : Attribute
 {
 }
