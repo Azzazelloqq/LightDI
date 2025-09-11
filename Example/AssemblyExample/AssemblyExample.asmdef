@@ -1,0 +1,4 @@
+﻿{
+  "name": "AssemblyExample",
+  "references":[ "GUID:c9f76ac6b5b2484789d93f0d3960dc33", "GUID:afa92b14bb954512b7f214985a418a77" ]
+}
