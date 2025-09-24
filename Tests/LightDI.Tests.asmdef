@@ -1,11 +1,14 @@
 {
     "name": "LightDI.Tests",
+    "rootNamespace": "",
     "references": [
         "LightDI",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
-    "includePlatforms": [],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": true,
