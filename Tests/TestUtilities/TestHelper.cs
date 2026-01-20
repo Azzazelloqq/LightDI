@@ -19,6 +19,28 @@ namespace LightDI.Tests
         }
 
         /// <summary>
+        /// Creates a clean container for testing purposes with a namespace scope.
+        /// </summary>
+        /// <param name="namespaceScope">The namespace scope used for resolution.</param>
+        /// <param name="disposeRegistered">Whether to dispose registered services when container is disposed.</param>
+        /// <returns>A new container instance.</returns>
+        public static IDiContainer CreateTestContainer(string namespaceScope, bool disposeRegistered = true)
+        {
+            return DiContainerFactory.CreateContainer(namespaceScope, disposeRegistered);
+        }
+
+        /// <summary>
+        /// Creates a clean container for testing purposes with an object scope owner.
+        /// </summary>
+        /// <param name="scopeOwner">The object that represents the scope owner.</param>
+        /// <param name="disposeRegistered">Whether to dispose registered services when container is disposed.</param>
+        /// <returns>A new container instance.</returns>
+        public static IDiContainer CreateTestContainer(object scopeOwner, bool disposeRegistered = true)
+        {
+            return DiContainerFactory.CreateContainer(scopeOwner, disposeRegistered);
+        }
+
+        /// <summary>
         /// Cleans up the global container provider for testing isolation.
         /// </summary>
         public static void CleanupGlobalProvider()

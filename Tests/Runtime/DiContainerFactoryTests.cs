@@ -102,20 +102,66 @@ namespace LightDI.Tests
             container.Dispose();
         }
 
+        /// <summary>
+        /// Ensures duplicate namespace scopes are rejected.
+        /// </summary>
+        [Test]
+        public void CreateContainer_WithDuplicateNamespaceScope_ShouldThrow()
+        {
+            // Arrange
+            const string scope = "LightDI.Tests.DuplicateScope";
+            var container = DiContainerFactory.CreateContainer(scope);
+            
+            // Act & Assert
+            Assert.Throws<Exception>(() => DiContainerFactory.CreateContainer(scope));
+            
+            // Cleanup
+            container.Dispose();
+        }
+
+        /// <summary>
+        /// Ensures duplicate scope owners are rejected.
+        /// </summary>
+        [Test]
+        public void CreateContainer_WithDuplicateScopeOwner_ShouldThrow()
+        {
+            // Arrange
+            var scopeOwner = new object();
+            var container = DiContainerFactory.CreateContainer(scopeOwner);
+            
+            // Act & Assert
+            Assert.Throws<Exception>(() => DiContainerFactory.CreateContainer(scopeOwner));
+            
+            // Cleanup
+            container.Dispose();
+        }
+
+        /// <summary>
+        /// Ensures invalid namespace scopes are rejected.
+        /// </summary>
+        [Test]
+        public void CreateContainer_WithInvalidNamespaceScope_ShouldThrow()
+        {
+            // Act & Assert
+            Assert.Throws<ArgumentException>(() => DiContainerFactory.CreateContainer("   "));
+        }
+
         [Test]
         public void CreateContainer_MultipleContainers_ShouldRegisterAllWithGlobalProvider()
         {
             // Act
-            var container1 = DiContainerFactory.CreateContainer();
-            var container2 = DiContainerFactory.CreateContainer();
+            const string scope1 = "LightDI.Tests.Container1";
+            var scopeOwner = new object();
+            var container1 = DiContainerFactory.CreateContainer(scope1);
+            var container2 = DiContainerFactory.CreateContainer(scopeOwner);
             
             container1.RegisterAsSingletonLazy<ITestService>(() => new TestService("container1"));
             container2.RegisterAsSingletonLazy<TransientTestService>(() => new TransientTestService());
             
             // Assert
             #pragma warning disable CS0618 // Type or member is obsolete
-            var testService = DiContainerProvider.Resolve<ITestService>();
-            var transientService = DiContainerProvider.Resolve<TransientTestService>();
+            var testService = DiContainerProvider.Resolve<ITestService>(scope1);
+            var transientService = DiContainerProvider.Resolve<TransientTestService>(scopeOwner);
             #pragma warning restore CS0618
             
             Assert.AreEqual("container1", testService.GetData());

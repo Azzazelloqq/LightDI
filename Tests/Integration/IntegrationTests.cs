@@ -67,19 +67,21 @@ namespace LightDI.Tests
         public void MultipleContainers_WithDifferentServices_ShouldWorkTogether()
         {
             // Arrange
-            var baseContainer = TestHelper.CreateTestContainer();
-            var extensionContainer = TestHelper.CreateTestContainer();
+            const string baseScope = "LightDI.Tests.Base";
+            const string extensionScope = "LightDI.Tests.Extension";
+            var baseContainer = TestHelper.CreateTestContainer(baseScope);
+            var extensionContainer = TestHelper.CreateTestContainer(extensionScope);
             
             // Base container provides core services
             baseContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("base-data"));
             
             // Extension container provides additional services that depend on base services
             extensionContainer.RegisterAsTransient<IDependentService>(() => 
-                new DependentService(DiContainerProvider.Resolve<ITestService>()));
+                new DependentService(DiContainerProvider.Resolve<ITestService>(baseScope)));
             extensionContainer.RegisterAsTransient<IComplexService>(() => 
                 new ComplexService(
-                    DiContainerProvider.Resolve<ITestService>(),
-                    DiContainerProvider.Resolve<IDependentService>()));
+                    DiContainerProvider.Resolve<ITestService>(baseScope),
+                    DiContainerProvider.Resolve<IDependentService>(extensionScope)));
             
             // Act
             var testService = TestHelper.ResolveFromContainer<ITestService>(baseContainer);
@@ -201,9 +203,12 @@ namespace LightDI.Tests
         public void ServiceLocatorPattern_ShouldWorkWithMultipleContainers()
         {
             // Arrange
-            var coreContainer = TestHelper.CreateTestContainer();
-            var pluginContainer1 = TestHelper.CreateTestContainer();
-            var pluginContainer2 = TestHelper.CreateTestContainer();
+            const string coreScope = "LightDI.Tests.Core";
+            const string pluginScope1 = "LightDI.Tests.Plugin1";
+            const string pluginScope2 = "LightDI.Tests.Plugin2";
+            var coreContainer = TestHelper.CreateTestContainer(coreScope);
+            var pluginContainer1 = TestHelper.CreateTestContainer(pluginScope1);
+            var pluginContainer2 = TestHelper.CreateTestContainer(pluginScope2);
             
             // Core services
             coreContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("core"));
@@ -214,9 +219,9 @@ namespace LightDI.Tests
             
             // Act - Resolve services from different containers via global provider
             #pragma warning disable CS0618 // Type or member is obsolete
-            var coreService = DiContainerProvider.Resolve<ITestService>();
-            var plugin1Service = DiContainerProvider.Resolve<TransientTestService>();
-            var plugin2Service = DiContainerProvider.Resolve<SingletonTestService>();
+            var coreService = DiContainerProvider.Resolve<ITestService>(coreScope);
+            var plugin1Service = DiContainerProvider.Resolve<TransientTestService>(pluginScope1);
+            var plugin2Service = DiContainerProvider.Resolve<SingletonTestService>(pluginScope2);
             #pragma warning restore CS0618
             
             // Assert
@@ -247,8 +252,8 @@ namespace LightDI.Tests
             container.RegisterAsSingletonLazy<CircularServiceB>(() => 
                 new CircularServiceB(DiContainerProvider.Resolve<CircularServiceA>()));
             
-            // Act & Assert - Circular dependencies should cause StackOverflowException
-            Assert.Throws<StackOverflowException>(() =>
+            // Act & Assert - Circular dependencies should be detected
+            Assert.Throws<InvalidOperationException>(() =>
             {
                 #pragma warning disable CS0618 // Type or member is obsolete
                 var serviceA = DiContainerProvider.Resolve<CircularServiceA>();

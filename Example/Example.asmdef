@@ -1,5 +1,7 @@
 ﻿{
   "name": "LightDI.Example",
   "references":[ "GUID:c9f76ac6b5b2484789d93f0d3960dc33" ],
-  "analyzers": []
+  "analyzers": [
+    "GUID:0da1328d1a7845a397b7ca502a46d3e1"
+  ]
 }

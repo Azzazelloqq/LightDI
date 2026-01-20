@@ -9,6 +9,11 @@ namespace LightDI.Runtime
 /// </summary>
 internal class LightDiContainer : IDiContainer
 {
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+	[ThreadStatic]
+	private static List<Type> _resolutionStack;
+#endif
+
 	private readonly bool _disposeRegistered;
 	private readonly Dictionary<Type, RegistrationInfo> _registrations = new();
 	private readonly List<IDisposable> _disposables = new();
@@ -87,6 +92,11 @@ internal class LightDiContainer : IDiContainer
 			instance = null;
 			return false;
 		}
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+		using (EnterResolutionScope(typeof(T)))
+		{
+#endif
 		
 		var type = typeof(T);
 		if (!_registrations.TryGetValue(type, out var registrationInfo))
@@ -106,6 +116,9 @@ internal class LightDiContainer : IDiContainer
 			default:
 				throw new ArgumentOutOfRangeException();
 		}
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+		}
+#endif
 	}
 
 	/// <inheritdoc/>
@@ -117,6 +130,10 @@ internal class LightDiContainer : IDiContainer
 				"Cannot resolve from a disposed container.");
 		}
 
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+		using (EnterResolutionScope(typeof(T)))
+		{
+#endif
 		var type = typeof(T);
 		if (!_registrations.TryGetValue(type, out var registrationInfo))
 		{
@@ -132,6 +149,9 @@ internal class LightDiContainer : IDiContainer
 			default:
 				throw new ArgumentOutOfRangeException();
 		}
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+		}
+#endif
 	}
 	
 	/// <summary>
@@ -236,5 +256,44 @@ internal class LightDiContainer : IDiContainer
 		
 		_onDispose?.Invoke();
 	}
+
+#if UNITY_EDITOR || UNITY_INCLUDE_TESTS
+	private static ResolutionScope EnterResolutionScope(Type type)
+	{
+		if (_resolutionStack == null)
+		{
+			_resolutionStack = new List<Type>(8);
+		}
+
+		for (int i = 0; i < _resolutionStack.Count; i++)
+		{
+			if (_resolutionStack[i] == type)
+			{
+				throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}.");
+			}
+		}
+
+		_resolutionStack.Add(type);
+		return new ResolutionScope(_resolutionStack);
+	}
+
+	private readonly struct ResolutionScope : IDisposable
+	{
+		private readonly List<Type> _stack;
+
+		public ResolutionScope(List<Type> stack)
+		{
+			_stack = stack;
+		}
+
+		public void Dispose()
+		{
+			if (_stack.Count > 0)
+			{
+				_stack.RemoveAt(_stack.Count - 1);
+			}
+		}
+	}
+#endif
 }
 }

@@ -63,7 +63,8 @@ public class CompositionRoot
     public void Enter()
     {
         // Create a new container and register it with DiContainerProvider.
-        var container = DiContainerFactory.CreateContainer();
+        // Use a scope that matches the namespace of classes created by generated factories.
+        var container = DiContainerFactory.CreateContainer("LightDI.Example");
 
         // Register your dependencies.
         container.RegisterAsSingleton<IServiceA>(() => new ServiceA());
@@ -77,6 +78,17 @@ public class CompositionRoot
 }
 
 
+```
+
+> **Scope Note:**  
+> Generated factories resolve dependencies using the class namespace.  
+> For multi-container setups, create containers with matching namespace scopes (or object scopes) to avoid cross-module resolution.  
+> `Resolve<T>()` without a scope works only when a single container is registered.
+
+Object scopes are also supported:
+```csharp
+var scopeOwner = new ModuleRoot();
+var container = DiContainerFactory.CreateContainer(scopeOwner);
 ```
 
 ## 2. Registering Services
@@ -166,14 +178,16 @@ A typical generated factory (e.g., GameManagerFactory.g.cs) might look like this
 ```csharp
 public static class GameManagerFactory
 {
+    private const string __namespaceScope = "LightDI.Example";
+
     public static GameManager CreateGameManager(int runtimeValue)
     {
         // Resolve constructor dependency without reflection.
-        var serviceA = DiContainerProvider.Resolve<IServiceA>();
+        var serviceA = DiContainerProvider.Resolve<IServiceA>(__namespaceScope);
         var instance = new GameManager(serviceA, runtimeValue);
         
         // Field injection is performed via reflection if necessary.
-        instance._weapon = DiContainerProvider.Resolve<IWeapon>();
+        instance._weapon = DiContainerProvider.Resolve<IWeapon>(__namespaceScope);
         
         return instance;
     }
@@ -188,11 +202,20 @@ public static class GameManagerFactory
 
 ## 4. Direct Resolution (Discouraged) 🚫
 
-While you **can** resolve services directly using `DiContainerProvider.Resolve<T>()`, this approach is intended only for **critical or internal cases**. For everyday use, please rely on the generated factories and constructor injection to maintain performance and clarity.
+While you **can** resolve services directly using `DiContainerProvider.Resolve<T>(scope)`, this approach is intended only for **critical or internal cases**. For everyday use, please rely on the generated factories and constructor injection to maintain performance and clarity.
 
 ```csharp
-var service = DiContainerProvider.Resolve<IServiceA>();
+var service = DiContainerProvider.Resolve<IServiceA>("LightDI.Example");
 ```
+
+If you want to avoid passing the scope repeatedly, use a scoped block:
+```csharp
+using (DiContainerProvider.BeginScope("LightDI.Example"))
+{
+    var service = DiContainerProvider.Resolve<IServiceA>();
+}
+```
+
 > **💡 Tip: Direct resolution bypasses the benefits of compile-time injection, so it should be avoided in favor of using the generated factories.**
 
 ### 5. Disposal 🗑️
@@ -212,7 +235,7 @@ Generated factories are produced in a separate assembly, so accessing internal s
 Recommendation: Either use public types or add an appropriate [InternalsVisibleTo] attribute in your assembly.
 
 - Direct Resolve Usage:
-Direct calls via DiContainerProvider.Resolve<T>() are available but are discouraged for regular use. Always prefer the compile-time generated factories and constructor injection.
+Direct calls via DiContainerProvider.Resolve<T>(scope) are available but are discouraged for regular use. Always prefer the compile-time generated factories and constructor injection.
 
 - MonoBehaviour Support:
 LightDI currently does not support dependency injection for MonoBehaviour classes. For Unity-specific DI with MonoBehaviours, consider using frameworks like Zenject or VContainer.
