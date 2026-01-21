@@ -103,65 +103,87 @@ namespace LightDI.Tests
         }
 
         /// <summary>
-        /// Ensures duplicate namespace scopes are rejected.
+        /// Ensures local containers take precedence over global containers.
         /// </summary>
         [Test]
-        public void CreateContainer_WithDuplicateNamespaceScope_ShouldThrow()
+        public void CreateContainer_Local_ShouldResolveBeforeGlobal()
         {
             // Arrange
-            const string scope = "LightDI.Tests.DuplicateScope";
-            var container = DiContainerFactory.CreateContainer(scope);
+            var localContainer = DiContainerFactory.CreateLocalContainer();
+            var globalContainer = DiContainerFactory.CreateGlobalContainer();
             
-            // Act & Assert
-            Assert.Throws<Exception>(() => DiContainerFactory.CreateContainer(scope));
+            localContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("local"));
+            globalContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("global"));
+
+            // Act
+            #pragma warning disable CS0618 // Type or member is obsolete
+            var resolved = DiContainerProvider.Resolve<ITestService>();
+            #pragma warning restore CS0618
             
+            // Assert
+            Assert.AreEqual("local", resolved.GetData());
+
             // Cleanup
-            container.Dispose();
+            localContainer.Dispose();
+            globalContainer.Dispose();
         }
 
         /// <summary>
-        /// Ensures duplicate scope owners are rejected.
+        /// Ensures global containers are used when local container cannot resolve.
         /// </summary>
         [Test]
-        public void CreateContainer_WithDuplicateScopeOwner_ShouldThrow()
+        public void CreateContainer_LocalMissingService_ShouldFallbackToGlobal()
         {
             // Arrange
-            var scopeOwner = new object();
-            var container = DiContainerFactory.CreateContainer(scopeOwner);
+            var localContainer = DiContainerFactory.CreateLocalContainer();
+            var globalContainer = DiContainerFactory.CreateGlobalContainer();
+            globalContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("global"));
+
+            // Act
+            #pragma warning disable CS0618 // Type or member is obsolete
+            var resolved = DiContainerProvider.Resolve<ITestService>();
+            #pragma warning restore CS0618
             
-            // Act & Assert
-            Assert.Throws<Exception>(() => DiContainerFactory.CreateContainer(scopeOwner));
-            
+            // Assert
+            Assert.AreEqual("global", resolved.GetData());
+
             // Cleanup
-            container.Dispose();
+            localContainer.Dispose();
+            globalContainer.Dispose();
         }
 
         /// <summary>
-        /// Ensures invalid namespace scopes are rejected.
+        /// Ensures duplicate local containers for the same assembly are rejected.
         /// </summary>
         [Test]
-        public void CreateContainer_WithInvalidNamespaceScope_ShouldThrow()
+        public void CreateContainer_WithDuplicateLocalAssembly_ShouldThrow()
         {
+            // Arrange
+            var container = DiContainerFactory.CreateLocalContainer();
+
             // Act & Assert
-            Assert.Throws<ArgumentException>(() => DiContainerFactory.CreateContainer("   "));
+            Assert.Throws<Exception>(() => DiContainerFactory.CreateLocalContainer());
+
+            // Cleanup
+            container.Dispose();
         }
 
         [Test]
         public void CreateContainer_MultipleContainers_ShouldRegisterAllWithGlobalProvider()
         {
             // Act
-            const string scope1 = "LightDI.Tests.Container1";
-            var scopeOwner = new object();
-            var container1 = DiContainerFactory.CreateContainer(scope1);
-            var container2 = DiContainerFactory.CreateContainer(scopeOwner);
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
+            var container1 = DiContainerFactory.CreateGlobalContainer();
+            var container2 = DiContainerFactory.CreateGlobalContainer();
             
             container1.RegisterAsSingletonLazy<ITestService>(() => new TestService("container1"));
             container2.RegisterAsSingletonLazy<TransientTestService>(() => new TransientTestService());
             
             // Assert
             #pragma warning disable CS0618 // Type or member is obsolete
-            var testService = DiContainerProvider.Resolve<ITestService>(scope1);
-            var transientService = DiContainerProvider.Resolve<TransientTestService>(scopeOwner);
+            var testService = DiContainerProvider.Resolve<ITestService>();
+            var transientService = DiContainerProvider.Resolve<TransientTestService>();
             #pragma warning restore CS0618
             
             Assert.AreEqual("container1", testService.GetData());
@@ -170,6 +192,7 @@ namespace LightDI.Tests
             // Cleanup
             container1.Dispose();
             container2.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         #endregion
@@ -205,6 +228,8 @@ namespace LightDI.Tests
         public void CreateContainer_PartialDisposal_ShouldOnlyUnregisterDisposedContainer()
         {
             // Arrange
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
             var container1 = DiContainerFactory.CreateContainer();
             var container2 = DiContainerFactory.CreateContainer();
             
@@ -223,6 +248,7 @@ namespace LightDI.Tests
             
             // Cleanup
             container2.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         #endregion

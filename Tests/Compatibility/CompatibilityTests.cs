@@ -252,6 +252,8 @@ namespace LightDI.Tests
         public void ConcurrentContainerCreation_ShouldWork()
         {
             // Arrange
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
             var containers = new IDiContainer[10];
             var exceptions = new Exception[10];
             
@@ -285,6 +287,7 @@ namespace LightDI.Tests
             {
                 containers[i]?.Dispose();
             }
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         #endregion

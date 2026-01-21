@@ -1,7 +1,10 @@
 using System;
+using System.Text.RegularExpressions;
 using LightDI.Runtime;
 using LightDI.Tests;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace LightDI.Tests
 {
@@ -65,170 +68,81 @@ namespace LightDI.Tests
 
         #endregion
 
-        #region Scope Resolution Tests
+        #region Local/Global Resolution Tests
 
         /// <summary>
-        /// Resolves a service using the most specific namespace scope.
+        /// Resolves from the local container before falling back to global containers.
         /// </summary>
         [Test]
-        public void Resolve_WithNamespacePrefix_ShouldPreferMostSpecificScope()
+        public void Resolve_WithLocalContainer_ShouldPreferLocal()
         {
             // Arrange
-            const string rootScope = "LightDI.Tests";
-            const string leafScope = "LightDI.Tests.Sub";
-            var rootContainer = TestHelper.CreateTestContainer(rootScope);
-            var leafContainer = TestHelper.CreateTestContainer(leafScope);
+            var localContainer = TestHelper.CreateLocalTestContainer();
+            var globalContainer = TestHelper.CreateTestContainer();
             
-            rootContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("root"));
-            leafContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("leaf"));
+            localContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("local"));
+            globalContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("global"));
             
             // Act
             #pragma warning disable CS0618 // Type or member is obsolete
-            var resolved = DiContainerProvider.Resolve<ITestService>("LightDI.Tests.Sub.Component");
+            var resolved = DiContainerProvider.Resolve<ITestService>();
             #pragma warning restore CS0618
             
             // Assert
-            Assert.AreEqual("leaf", resolved.GetData());
+            Assert.AreEqual("local", resolved.GetData());
             
             // Cleanup
-            rootContainer.Dispose();
-            leafContainer.Dispose();
+            localContainer.Dispose();
+            globalContainer.Dispose();
         }
 
         /// <summary>
-        /// Resolves a service using an ambient namespace scope.
+        /// Falls back to global containers when the local container cannot resolve.
         /// </summary>
         [Test]
-        public void Resolve_WithBeginScopeNamespace_ShouldRouteToScopedContainer()
+        public void Resolve_WithLocalContainerMissingService_ShouldFallbackToGlobal()
         {
             // Arrange
-            const string scope = "LightDI.Tests.Scoped";
-            var container = TestHelper.CreateTestContainer(scope);
-            container.RegisterAsSingletonLazy<ITestService>(() => new TestService("scoped"));
+            var localContainer = TestHelper.CreateLocalTestContainer();
+            var globalContainer = TestHelper.CreateTestContainer();
+            globalContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("global"));
             
             // Act
             #pragma warning disable CS0618 // Type or member is obsolete
-            using (DiContainerProvider.BeginScope(scope))
-            {
-                var resolved = DiContainerProvider.Resolve<ITestService>();
-                Assert.AreEqual("scoped", resolved.GetData());
-            }
-            #pragma warning restore CS0618
-            
-            // Cleanup
-            container.Dispose();
-        }
-
-        /// <summary>
-        /// Resolves a service using an ambient object scope.
-        /// </summary>
-        [Test]
-        public void Resolve_WithBeginScopeOwner_ShouldRouteToScopedContainer()
-        {
-            // Arrange
-            var scopeOwner = new object();
-            var container = TestHelper.CreateTestContainer(scopeOwner);
-            container.RegisterAsSingletonLazy<ITestService>(() => new TestService("owner-scope"));
-            
-            // Act
-            #pragma warning disable CS0618 // Type or member is obsolete
-            using (DiContainerProvider.BeginScope(scopeOwner))
-            {
-                var resolved = DiContainerProvider.Resolve<ITestService>();
-                Assert.AreEqual("owner-scope", resolved.GetData());
-            }
-            #pragma warning restore CS0618
-            
-            // Cleanup
-            container.Dispose();
-        }
-
-        /// <summary>
-        /// Ensures object scope resolution uses reference identity instead of Equals.
-        /// </summary>
-        [Test]
-        public void Resolve_WithObjectScope_ShouldUseReferenceIdentity()
-        {
-            // Arrange
-            var scopeOwner = new AlwaysEqualScopeOwner();
-            var otherOwner = new AlwaysEqualScopeOwner();
-            var container = TestHelper.CreateTestContainer(scopeOwner);
-            container.RegisterAsSingletonLazy<ITestService>(() => new TestService("owner"));
-            
-            // Act & Assert
-            #pragma warning disable CS0618 // Type or member is obsolete
-            var exception = TestHelper.AssertThrows<Exception>(() => 
-                DiContainerProvider.Resolve<ITestService>(otherOwner));
-            #pragma warning restore CS0618
-            
-            Assert.That(exception.Message, Contains.Substring("No container registered"));
-            
-            // Cleanup
-            container.Dispose();
-        }
-
-        /// <summary>
-        /// Falls back to a single container even when the namespace scope is missing.
-        /// </summary>
-        [Test]
-        public void Resolve_WithMissingNamespaceScopeAndSingleContainer_ShouldFallback()
-        {
-            // Arrange
-            var container = TestHelper.CreateTestContainer();
-            container.RegisterAsSingletonLazy<ITestService>(() => new TestService("fallback"));
-            
-            // Act
-            #pragma warning disable CS0618 // Type or member is obsolete
-            var resolved = DiContainerProvider.Resolve<ITestService>("Missing.Scope");
+            var resolved = DiContainerProvider.Resolve<ITestService>();
             #pragma warning restore CS0618
             
             // Assert
-            Assert.AreEqual("fallback", resolved.GetData());
+            Assert.AreEqual("global", resolved.GetData());
             
             // Cleanup
-            container.Dispose();
+            localContainer.Dispose();
+            globalContainer.Dispose();
         }
 
         /// <summary>
-        /// Throws when namespace scope is missing and multiple containers exist.
+        /// Uses global containers when the supplied assembly has no local container.
         /// </summary>
         [Test]
-        public void Resolve_WithMissingNamespaceScopeAndMultipleContainers_ShouldThrow()
+        public void Resolve_WithAssemblyParameter_ShouldFallbackToGlobal()
         {
             // Arrange
-            var container1 = TestHelper.CreateTestContainer();
-            var container2 = TestHelper.CreateTestContainer();
-            container1.RegisterAsSingletonLazy<ITestService>(() => new TestService("first"));
+            var localContainer = TestHelper.CreateLocalTestContainer();
+            var globalContainer = TestHelper.CreateTestContainer();
+            localContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("local"));
+            globalContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("global"));
             
-            // Act & Assert
+            // Act
             #pragma warning disable CS0618 // Type or member is obsolete
-            var exception = TestHelper.AssertThrows<Exception>(() => 
-                DiContainerProvider.Resolve<ITestService>("Missing.Scope"));
+            var resolved = DiContainerProvider.Resolve<ITestService>(typeof(string).Assembly);
             #pragma warning restore CS0618
             
-            Assert.That(exception.Message, Contains.Substring("No container registered"));
+            // Assert
+            Assert.AreEqual("global", resolved.GetData());
             
             // Cleanup
-            container1.Dispose();
-            container2.Dispose();
-        }
-
-        /// <summary>
-        /// Prevents disposing scopes out of order.
-        /// </summary>
-        [Test]
-        public void BeginScope_DisposedOutOfOrder_ShouldThrow()
-        {
-            // Arrange
-            var firstScope = DiContainerProvider.BeginScope("First.Scope");
-            var secondScope = DiContainerProvider.BeginScope("Second.Scope");
-            
-            // Act & Assert
-            Assert.Throws<InvalidOperationException>(() => firstScope.Dispose());
-            
-            // Cleanup
-            secondScope.Dispose();
-            firstScope.Dispose();
+            localContainer.Dispose();
+            globalContainer.Dispose();
         }
 
         #endregion
@@ -236,13 +150,13 @@ namespace LightDI.Tests
         #region Multiple Container Tests
 
         [Test]
-        public void Resolve_WithMultipleContainers_ShouldResolveFromScopedContainers()
+        public void Resolve_WithMultipleGlobalContainers_ShouldResolveFromRegisteredOrder()
         {
             // Arrange
-            const string scope1 = "LightDI.Tests.Container1";
-            const string scope2 = "LightDI.Tests.Container2";
-            var container1 = TestHelper.CreateTestContainer(scope1);
-            var container2 = TestHelper.CreateTestContainer(scope2);
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
+            var container1 = TestHelper.CreateTestContainer();
+            var container2 = TestHelper.CreateTestContainer();
             
             container1.RegisterAsSingletonLazy<ITestService>(() => new TestService("container1"));
             container2.RegisterAsSingletonLazy<ITestService>(() => new TestService("container2"));
@@ -250,8 +164,8 @@ namespace LightDI.Tests
             
             // Act
             #pragma warning disable CS0618 // Type or member is obsolete
-            var testService = DiContainerProvider.Resolve<ITestService>(scope1);
-            var transientService = DiContainerProvider.Resolve<TransientTestService>(scope2);
+            var testService = DiContainerProvider.Resolve<ITestService>();
+            var transientService = DiContainerProvider.Resolve<TransientTestService>();
             #pragma warning restore CS0618
             
             // Assert
@@ -261,12 +175,15 @@ namespace LightDI.Tests
             // Cleanup
             container1.Dispose();
             container2.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         [Test]
         public void Resolve_WithPartialContainerDisposal_ShouldResolveFromRemainingContainers()
         {
             // Arrange
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
             var container1 = TestHelper.CreateTestContainer();
             var container2 = TestHelper.CreateTestContainer();
             
@@ -285,6 +202,7 @@ namespace LightDI.Tests
             
             // Cleanup
             container2.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         #endregion
@@ -330,6 +248,8 @@ namespace LightDI.Tests
         public void Dispose_ShouldClearAllRegisteredContainers()
         {
             // Arrange
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
             var container1 = TestHelper.CreateTestContainer();
             var container2 = TestHelper.CreateTestContainer();
             
@@ -354,6 +274,7 @@ namespace LightDI.Tests
             // Cleanup
             container1.Dispose();
             container2.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         [Test]
@@ -429,18 +350,16 @@ namespace LightDI.Tests
         public void Resolve_ComplexDependencyChain_ShouldResolveFromMultipleContainers()
         {
             // Arrange
-            const string baseScope = "LightDI.Tests.Base";
-            const string dependencyScope = "LightDI.Tests.Dependency";
-            var baseContainer = TestHelper.CreateTestContainer(baseScope);
-            var dependencyContainer = TestHelper.CreateTestContainer(dependencyScope);
+            var baseContainer = TestHelper.CreateTestContainer();
+            var dependencyContainer = TestHelper.CreateLocalTestContainer();
             
             baseContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("base"));
             dependencyContainer.RegisterAsSingletonLazy<IDependentService>(() => 
-                new DependentService(DiContainerProvider.Resolve<ITestService>(baseScope)));
+                new DependentService(DiContainerProvider.Resolve<ITestService>()));
             
             // Act
             #pragma warning disable CS0618 // Type or member is obsolete
-            var dependentService = DiContainerProvider.Resolve<IDependentService>(dependencyScope);
+            var dependentService = DiContainerProvider.Resolve<IDependentService>();
             #pragma warning restore CS0618
             
             // Assert
@@ -455,43 +374,24 @@ namespace LightDI.Tests
         }
 
         [Test]
-        public void Resolve_WithMultipleContainersWithoutScope_ShouldThrow()
+        public void Register_MultipleGlobalContainers_ShouldLogWarningWhenNotAllowed()
         {
             // Arrange
-            var highPriorityContainer = TestHelper.CreateTestContainer();
-            var lowPriorityContainer = TestHelper.CreateTestContainer();
-            
-            // Register in specific order
-            highPriorityContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("high-priority"));
-            lowPriorityContainer.RegisterAsSingletonLazy<ITestService>(() => new TestService("low-priority"));
-            
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = false;
+            LogAssert.Expect(LogType.Warning, new Regex("Multiple global containers"));
+
             // Act
-            #pragma warning disable CS0618 // Type or member is obsolete
-            var exception = TestHelper.AssertThrows<Exception>(() => 
-                DiContainerProvider.Resolve<ITestService>());
-            #pragma warning restore CS0618
-            
-            // Assert
-            Assert.That(exception.Message, Contains.Substring("no scope is set"));
-            
+            var container1 = TestHelper.CreateTestContainer();
+            var container2 = TestHelper.CreateTestContainer();
+
             // Cleanup
-            highPriorityContainer.Dispose();
-            lowPriorityContainer.Dispose();
+            container1.Dispose();
+            container2.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         #endregion
 
-        private sealed class AlwaysEqualScopeOwner
-        {
-            public override bool Equals(object obj)
-            {
-                return true;
-            }
-
-            public override int GetHashCode()
-            {
-                return 1;
-            }
-        }
     }
 }

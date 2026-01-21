@@ -6,7 +6,7 @@ public class CompositionRoot
 {
 	public void Enter()
 	{
-		var container = DiContainerFactory.CreateContainer("LightDI.Example");
+		var container = DiContainerFactory.CreateLocalContainer();
 		
 		container.RegisterAsSingletonLazy<IServiceA>(() => new ServiceA());
 		container.RegisterAsSingletonLazy<IWeapon>(() => new Sword());

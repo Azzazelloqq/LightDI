@@ -1,6 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -16,114 +16,66 @@ namespace LightDI.Runtime
 /// </summary>
 public static class DiContainerProvider
 {
-	private static readonly ConcurrentDictionary<IDiContainer, ContainerRegistration> _containers = new();
-	private static readonly ConcurrentDictionary<string, ContainerRegistration> _namespaceScopeIndex =
-		new(StringComparer.Ordinal);
-	private static readonly ConcurrentDictionary<string, List<ContainerRegistration>> _namespaceChainCache =
-		new(StringComparer.Ordinal);
-	private static readonly ConcurrentDictionary<object, ContainerRegistration> _objectScopeIndex =
-		new(new ReferenceEqualityComparer());
-	private static int _containerCount;
-	private static ContainerRegistration _singleContainer;
-	
-	[ThreadStatic]
-	private static ScopeFrame _currentScope;
+	private static readonly ConcurrentDictionary<Assembly, IDiContainer> _localContainers = new();
+	private static readonly object _globalSync = new object();
+	private static IDiContainer[] _globalContainers = Array.Empty<IDiContainer>();
+	private static bool _allowMultipleGlobalContainers;
 
 	/// <summary>
-	/// Resolves a service of type <typeparamref name="T"/> from the current scope.
-	/// This method is marked obsolete; use compile-time injection ([Inject]) instead.
+	/// Gets or sets a value indicating whether multiple global containers are allowed without warnings.
 	/// </summary>
-	/// <typeparam name="T">The service type to resolve.</typeparam>
-	/// <returns>An instance of the service.</returns>
-	/// <exception cref="Exception">Thrown if no container can resolve the service.</exception>
-	[Obsolete("Use attribute [Inject]. DiContainer not for regular use. It's for internal use or critical cases only.")]
-	public static T Resolve<T>() where T : class
+	public static bool AllowMultipleGlobalContainers
 	{
-		var scope = _currentScope;
-		if (scope != null)
-		{
-			switch (scope.Kind)
-			{
-				case ScopeKind.Namespace:
-					return Resolve<T>(scope.NamespaceScope);
-				case ScopeKind.Object:
-					return Resolve<T>(scope.ScopeOwner);
-				default:
-					throw new ArgumentOutOfRangeException();
-			}
-		}
-		
-		if (TryGetSingleContainer(out var singleRegistration))
-		{
-			return ResolveFromRegistration<T>(singleRegistration);
-		}
-
-		if (_containers.IsEmpty)
-		{
-			throw new Exception($"Service of type {typeof(T).FullName} is not registered.");
-		}
-
-		throw new Exception($"Multiple containers are registered but no scope is set for " +
-							$"{typeof(T).FullName}. Use DiContainerProvider.BeginScope(...) or Resolve<T>(scope).");
+		get { return Volatile.Read(ref _allowMultipleGlobalContainers); }
+		set { Volatile.Write(ref _allowMultipleGlobalContainers, value); }
 	}
 
 	/// <summary>
-	/// Resolves a service of type <typeparamref name="T"/> from the best matching namespace scope.
+	/// Resolves a service of type <typeparamref name="T"/>.
 	/// This method is marked obsolete; use compile-time injection ([Inject]) instead.
 	/// </summary>
 	/// <typeparam name="T">The service type to resolve.</typeparam>
-	/// <param name="scope">The namespace scope used for resolution.</param>
 	/// <returns>An instance of the service.</returns>
 	/// <exception cref="Exception">Thrown if no container can resolve the service.</exception>
 	[Obsolete("Use attribute [Inject]. DiContainer not for regular use. It's for internal use or critical cases only.")]
-	public static T Resolve<T>(string scope) where T : class
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	public static T Resolve<T>() where T : class
 	{
-		ValidateNamespaceScope(scope);
-		var chain = GetNamespaceChain(scope);
+		return Resolve<T>(Assembly.GetCallingAssembly());
+	}
 
-		if (chain.Count == 0)
+	/// <summary>
+	/// Resolves a service of type <typeparamref name="T"/> using the specified assembly for local lookup.
+	/// This method is marked obsolete; use compile-time injection ([Inject]) instead.
+	/// </summary>
+	/// <typeparam name="T">The service type to resolve.</typeparam>
+	/// <param name="assembly">The assembly used to locate a local container.</param>
+	/// <returns>An instance of the service.</returns>
+	/// <exception cref="Exception">Thrown if no container can resolve the service.</exception>
+	[Obsolete("Use attribute [Inject]. DiContainer not for regular use. It's for internal use or critical cases only.")]
+	public static T Resolve<T>(Assembly assembly) where T : class
+	{
+		if (assembly != null)
 		{
-			if (TryGetSingleContainer(out var singleRegistration))
+			if (_localContainers.TryGetValue(assembly, out var localContainer))
 			{
-				return ResolveFromRegistration<T>(singleRegistration);
+				if (localContainer.TryResolve<T>(out var instance))
+				{
+					return instance;
+				}
 			}
-
-			throw new Exception($"No container registered for namespace scope '{scope}'.");
 		}
 
-		for (int i = 0; i < chain.Count; i++)
+		var globals = _globalContainers;
+		for (int i = 0; i < globals.Length; i++)
 		{
-			if (chain[i].Container.TryResolve<T>(out var instance))
+			if (globals[i].TryResolve<T>(out var instance))
 			{
 				return instance;
 			}
 		}
 
-		throw new Exception($"Service of type {typeof(T).FullName} is not registered for scope '{scope}'.");
-	}
-
-	/// <summary>
-	/// Resolves a service of type <typeparamref name="T"/> from the provided scope owner.
-	/// This method is marked obsolete; use compile-time injection ([Inject]) instead.
-	/// </summary>
-	/// <typeparam name="T">The service type to resolve.</typeparam>
-	/// <param name="scopeOwner">The object that represents the scope owner.</param>
-	/// <returns>An instance of the service.</returns>
-	/// <exception cref="Exception">Thrown if no container can resolve the service.</exception>
-	[Obsolete("Use attribute [Inject]. DiContainer not for regular use. It's for internal use or critical cases only.")]
-	public static T Resolve<T>(object scopeOwner) where T : class
-	{
-		if (scopeOwner == null)
-		{
-			throw new ArgumentNullException(nameof(scopeOwner));
-		}
-		
-		if (!_objectScopeIndex.TryGetValue(scopeOwner, out var registration))
-		{
-			throw new Exception($"No container registered for scope owner '{scopeOwner.GetType().FullName}'.");
-		}
-
-		return ResolveFromRegistration<T>(registration);
+		throw new Exception($"Service of type {typeof(T).FullName} is not registered.");
 	}
 
 	/// <summary>
@@ -134,7 +86,7 @@ public static class DiContainerProvider
 	/// <param name="container">The container to resolve from.</param>
 	/// <returns>An instance of the service.</returns>
 	/// <exception cref="ArgumentNullException">Thrown if the container is null.</exception>
-	[Obsolete("Use generated factories or scoped Resolve methods. This API is for performance-critical paths only.")]
+	[Obsolete("Use generated factories or assembly-aware Resolve methods. This API is for performance-critical paths only.")]
 	public static T ResolveFromContainer<T>(IDiContainer container) where T : class
 	{
 		if (container == null)
@@ -154,7 +106,7 @@ public static class DiContainerProvider
 	/// <param name="instance">The resolved instance if successful.</param>
 	/// <returns>True if resolution succeeded; otherwise, false.</returns>
 	/// <exception cref="ArgumentNullException">Thrown if the container is null.</exception>
-	[Obsolete("Use generated factories or scoped Resolve methods. This API is for performance-critical paths only.")]
+	[Obsolete("Use generated factories or assembly-aware Resolve methods. This API is for performance-critical paths only.")]
 	public static bool TryResolveFromContainer<T>(IDiContainer container, out T instance) where T : class
 	{
 		if (container == null)
@@ -166,321 +118,159 @@ public static class DiContainerProvider
 	}
 
 	/// <summary>
-	/// Begins a scope for the current thread using the specified namespace.
-	/// </summary>
-	/// <param name="scope">The namespace scope to use.</param>
-	/// <returns>An <see cref="IDisposable"/> that ends the scope when disposed.</returns>
-	public static IDisposable BeginScope(string scope)
-	{
-		ValidateNamespaceScope(scope);
-		return PushScope(ScopeKind.Namespace, scope, null);
-	}
-
-	/// <summary>
-	/// Begins a scope for the current thread using the specified scope owner object.
-	/// </summary>
-	/// <param name="scopeOwner">The object that represents the scope owner.</param>
-	/// <returns>An <see cref="IDisposable"/> that ends the scope when disposed.</returns>
-	public static IDisposable BeginScope(object scopeOwner)
-	{
-		if (scopeOwner == null)
-		{
-			throw new ArgumentNullException(nameof(scopeOwner));
-		}
-		
-		return PushScope(ScopeKind.Object, null, scopeOwner);
-	}
-	
-	/// <summary>
 	/// Disposes the global container registry.
 	/// Call this to clear static data (e.g., when Unity’s domain reload is disabled).
 	/// </summary>
 	public static void Dispose()
 	{
-		_namespaceScopeIndex.Clear();
-		_namespaceChainCache.Clear();
-		_objectScopeIndex.Clear();
-		_containers.Clear();
-		Interlocked.Exchange(ref _containerCount, 0);
-		Volatile.Write(ref _singleContainer, null);
-		_currentScope = null;
-	}
-	
-	/// <summary>
-	/// Registers a container with the global provider.
-	/// </summary>
-	/// <param name="diContainer">The container to register.</param>
-	internal static void RegisterContainer(IDiContainer diContainer)
-	{
-		RegisterContainer(diContainer, null, null);
+		_localContainers.Clear();
+		lock (_globalSync)
+		{
+			_globalContainers = Array.Empty<IDiContainer>();
+		}
 	}
 
 	/// <summary>
-	/// Registers a container with the global provider along with its scope metadata.
+	/// Registers a global container with the provider.
 	/// </summary>
 	/// <param name="diContainer">The container to register.</param>
-	/// <param name="namespaceScope">The namespace scope (optional).</param>
-	/// <param name="scopeOwner">The scope owner object (optional).</param>
-	internal static void RegisterContainer(IDiContainer diContainer, string namespaceScope, object scopeOwner)
+	internal static void RegisterGlobalContainer(IDiContainer diContainer)
 	{
 		if (diContainer == null)
 		{
 			throw new ArgumentNullException(nameof(diContainer));
 		}
 
-		if (namespaceScope != null)
-		{
-			ValidateNamespaceScope(namespaceScope);
-		}
-
-		var registration = new ContainerRegistration(diContainer, namespaceScope, scopeOwner);
-		if (!_containers.TryAdd(diContainer, registration))
-		{
-			throw new Exception("Container is already registered.");
-		}
-
-		if (namespaceScope != null)
-		{
-			if (!_namespaceScopeIndex.TryAdd(namespaceScope, registration))
-			{
-				_containers.TryRemove(diContainer, out _);
-				throw new Exception($"A container with namespace scope '{namespaceScope}' is already registered.");
-			}
-		}
-
-		if (scopeOwner != null)
-		{
-			if (!_objectScopeIndex.TryAdd(scopeOwner, registration))
-			{
-				if (namespaceScope != null)
-				{
-					_namespaceScopeIndex.TryRemove(namespaceScope, out _);
-				}
-
-				_containers.TryRemove(diContainer, out _);
-				throw new Exception($"A container with scope owner '{scopeOwner.GetType().FullName}' is already registered.");
-			}
-		}
-
-		_namespaceChainCache.Clear();
-		UpdateSingleContainerAfterAdd(registration);
+		RegisterGlobal(diContainer);
 	}
 
 	/// <summary>
-	/// Unregisters a container from the global provider.
+	/// Registers a local container with the provider for the specified assembly.
+	/// </summary>
+	/// <param name="diContainer">The container to register.</param>
+	/// <param name="assembly">The assembly associated with the local container.</param>
+	internal static void RegisterLocalContainer(IDiContainer diContainer, Assembly assembly)
+	{
+		if (diContainer == null)
+		{
+			throw new ArgumentNullException(nameof(diContainer));
+		}
+
+		RegisterLocal(diContainer, assembly);
+	}
+
+	/// <summary>
+	/// Unregisters a global container from the provider.
 	/// </summary>
 	/// <param name="diContainer">The container to unregister.</param>
-	internal static void UnregisterContainer(IDiContainer diContainer)
+	internal static void UnregisterGlobalContainer(IDiContainer diContainer)
 	{
 		if (diContainer == null)
 		{
 			return;
 		}
 
-		if (!_containers.TryRemove(diContainer, out var registration))
+		UnregisterGlobal(diContainer);
+	}
+
+	/// <summary>
+	/// Unregisters a local container for the specified assembly.
+	/// </summary>
+	/// <param name="diContainer">The container to unregister.</param>
+	/// <param name="assembly">The assembly associated with the local container.</param>
+	internal static void UnregisterLocalContainer(IDiContainer diContainer, Assembly assembly)
+	{
+		if (diContainer == null)
 		{
 			return;
 		}
 
-		if (registration.NamespaceScope != null)
-		{
-			_namespaceScopeIndex.TryRemove(registration.NamespaceScope, out _);
-		}
-
-		if (registration.ScopeOwner != null)
-		{
-			_objectScopeIndex.TryRemove(registration.ScopeOwner, out _);
-		}
-
-		_namespaceChainCache.Clear();
-		UpdateSingleContainerAfterRemove();
+		UnregisterLocal(diContainer, assembly);
 	}
 
-	private static IDisposable PushScope(ScopeKind kind, string namespaceScope, object scopeOwner)
+	private static void RegisterGlobal(IDiContainer diContainer)
 	{
-		var frame = new ScopeFrame(kind, namespaceScope, scopeOwner, _currentScope);
-		_currentScope = frame;
-		return frame;
-	}
-
-	private static List<ContainerRegistration> GetNamespaceChain(string scope)
-	{
-		return _namespaceChainCache.GetOrAdd(scope, BuildNamespaceChain);
-	}
-
-	private static List<ContainerRegistration> BuildNamespaceChain(string scope)
-	{
-		var chain = new List<ContainerRegistration>();
-		var current = scope;
-
-		while (true)
+		lock (_globalSync)
 		{
-			if (_namespaceScopeIndex.TryGetValue(current, out var registration))
+			var current = _globalContainers;
+			if (Array.IndexOf(current, diContainer) >= 0)
 			{
-				chain.Add(registration);
+				throw new Exception("Container is already registered as global.");
 			}
 
-			var lastDotIndex = current.LastIndexOf('.');
-			if (lastDotIndex < 0)
+			var newList = new IDiContainer[current.Length + 1];
+			Array.Copy(current, newList, current.Length);
+			newList[current.Length] = diContainer;
+			_globalContainers = newList;
+
+			if (newList.Length > 1 && !AllowMultipleGlobalContainers)
 			{
-				break;
+				LogWarning($"Multiple global containers detected ({newList.Length}). " +
+						   "Set DiContainerProvider.AllowMultipleGlobalContainers = true to suppress this warning.");
 			}
-
-			current = current.Substring(0, lastDotIndex);
-		}
-
-		return chain;
-	}
-
-	private static bool TryGetSingleContainer(out ContainerRegistration registration)
-	{
-		if (Volatile.Read(ref _containerCount) != 1)
-		{
-			registration = null;
-			return false;
-		}
-
-		registration = _singleContainer;
-		if (registration != null)
-		{
-			return true;
-		}
-
-		foreach (var item in _containers.Values)
-		{
-			registration = item;
-			_singleContainer = item;
-			return true;
-		}
-
-		registration = null;
-		return false;
-	}
-
-	private static void UpdateSingleContainerAfterAdd(ContainerRegistration registration)
-	{
-		var newCount = Interlocked.Increment(ref _containerCount);
-		if (newCount == 1)
-		{
-			Volatile.Write(ref _singleContainer, registration);
-		}
-		else
-		{
-			Volatile.Write(ref _singleContainer, null);
 		}
 	}
 
-	private static void UpdateSingleContainerAfterRemove()
+	private static void RegisterLocal(IDiContainer diContainer, Assembly assembly)
 	{
-		var newCount = Interlocked.Decrement(ref _containerCount);
-		if (newCount == 1)
+		if (assembly == null)
 		{
-			foreach (var item in _containers.Values)
-			{
-				Volatile.Write(ref _singleContainer, item);
-				return;
-			}
-
-			Volatile.Write(ref _singleContainer, null);
-			return;
+			throw new ArgumentNullException(nameof(assembly));
 		}
 
-		if (newCount <= 0)
+		if (!_localContainers.TryAdd(assembly, diContainer))
 		{
-			Volatile.Write(ref _singleContainer, null);
-			return;
-		}
-
-		Volatile.Write(ref _singleContainer, null);
-	}
-
-	private static void ValidateNamespaceScope(string scope)
-	{
-		if (scope == null)
-		{
-			throw new ArgumentNullException(nameof(scope));
-		}
-
-		if (scope.Length > 0 && string.IsNullOrWhiteSpace(scope))
-		{
-			throw new ArgumentException("Scope cannot be whitespace.", nameof(scope));
+			throw new Exception($"A local container is already registered for assembly '{assembly.FullName}'.");
 		}
 	}
 
-	private static T ResolveFromRegistration<T>(ContainerRegistration registration) where T : class
+	private static void UnregisterGlobal(IDiContainer diContainer)
 	{
-		if (!registration.Container.TryResolve<T>(out var instance))
+		lock (_globalSync)
 		{
-			throw new Exception($"Service of type {typeof(T).FullName} is not registered.");
-		}
-
-		return instance;
-	}
-
-	private enum ScopeKind
-	{
-		Namespace,
-		Object
-	}
-
-	private sealed class ScopeFrame : IDisposable
-	{
-		public ScopeKind Kind { get; }
-		public string NamespaceScope { get; }
-		public object ScopeOwner { get; }
-		public ScopeFrame Previous { get; }
-		private bool _disposed;
-
-		public ScopeFrame(ScopeKind kind, string namespaceScope, object scopeOwner, ScopeFrame previous)
-		{
-			Kind = kind;
-			NamespaceScope = namespaceScope;
-			ScopeOwner = scopeOwner;
-			Previous = previous;
-		}
-
-		public void Dispose()
-		{
-			if (_disposed)
+			var current = _globalContainers;
+			var index = Array.IndexOf(current, diContainer);
+			if (index < 0)
 			{
 				return;
 			}
 
-			if (!ReferenceEquals(_currentScope, this))
+			if (current.Length == 1)
 			{
-				throw new InvalidOperationException("Scope disposed out of order.");
+				_globalContainers = Array.Empty<IDiContainer>();
+				return;
 			}
 
-			_currentScope = Previous;
-			_disposed = true;
+			var newList = new IDiContainer[current.Length - 1];
+			if (index > 0)
+			{
+				Array.Copy(current, 0, newList, 0, index);
+			}
+
+			if (index < current.Length - 1)
+			{
+				Array.Copy(current, index + 1, newList, index, current.Length - index - 1);
+			}
+
+			_globalContainers = newList;
 		}
 	}
 
-	private sealed class ContainerRegistration
+	private static void UnregisterLocal(IDiContainer diContainer, Assembly assembly)
 	{
-		public IDiContainer Container { get; }
-		public string NamespaceScope { get; }
-		public object ScopeOwner { get; }
-
-		public ContainerRegistration(IDiContainer container, string namespaceScope, object scopeOwner)
+		if (assembly == null)
 		{
-			Container = container;
-			NamespaceScope = namespaceScope;
-			ScopeOwner = scopeOwner;
+			return;
 		}
+
+		_localContainers.TryRemove(assembly, out _);
 	}
 
-	private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
+	private static void LogWarning(string message)
 	{
-		public bool Equals(object x, object y)
-		{
-			return ReferenceEquals(x, y);
-		}
-
-		public int GetHashCode(object obj)
-		{
-			return RuntimeHelpers.GetHashCode(obj);
-		}
+#if UNITY_5_3_OR_NEWER
+		UnityEngine.Debug.LogWarning(message);
+#endif
 	}
 }
 }
