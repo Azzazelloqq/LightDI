@@ -123,9 +123,20 @@ public static class DiContainerProvider
 	/// </summary>
 	public static void Dispose()
 	{
+		foreach (var keyValuePair in _localContainers)
+		{
+			keyValuePair.Value.Dispose();
+		}
+		
 		_localContainers.Clear();
+		
 		lock (_globalSync)
 		{
+			foreach (var globalContainer in _globalContainers)
+			{
+				globalContainer.Dispose();
+			}
+
 			_globalContainers = Array.Empty<IDiContainer>();
 		}
 	}
