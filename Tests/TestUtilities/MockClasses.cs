@@ -72,6 +72,34 @@ namespace LightDI.Tests
         }
     }
 
+    public sealed class ThrowingDisposableTestService : IDisposable
+    {
+        private readonly Exception _exception;
+
+        public bool DisposeCalled { get; private set; }
+
+        public ThrowingDisposableTestService(Exception exception)
+        {
+            _exception = exception;
+        }
+
+        public void Dispose()
+        {
+            DisposeCalled = true;
+            throw _exception;
+        }
+    }
+
+    public sealed class TrackingDisposableTestService : IDisposable
+    {
+        public bool IsDisposed { get; private set; }
+
+        public void Dispose()
+        {
+            IsDisposed = true;
+        }
+    }
+
     /// <summary>
     /// Mock service that depends on another service.
     /// </summary>

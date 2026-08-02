@@ -276,6 +276,26 @@ namespace LightDI.Tests.Runtime
         }
 
         [Test]
+        public void Dispose_WhenServiceThrows_ShouldDisposeRemainingServicesAndBecomeDisposed()
+        {
+            var expectedException = new InvalidOperationException("dispose failed");
+            var throwingService = new ThrowingDisposableTestService(expectedException);
+            var trackingService = new TrackingDisposableTestService();
+            _container.RegisterAsSingleton(throwingService);
+            _container.RegisterAsSingleton(trackingService);
+
+            var exception = Assert.Throws<InvalidOperationException>(() => _container.Dispose());
+
+            Assert.That(exception, Is.SameAs(expectedException));
+            Assert.That(throwingService.DisposeCalled, Is.True);
+            Assert.That(trackingService.IsDisposed, Is.True);
+            Assert.That(
+                () => TestHelper.ResolveFromContainer<TrackingDisposableTestService>(_container),
+                Throws.TypeOf<ObjectDisposedException>());
+            Assert.DoesNotThrow(() => _container.Dispose());
+        }
+
+        [Test]
         public void Resolve_AfterDispose_ShouldThrowObjectDisposedException()
         {
             // Arrange

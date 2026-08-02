@@ -267,9 +267,9 @@ namespace LightDI.Tests
             
             Assert.That(exception.Message, Contains.Substring("not registered"));
             
-            // Note: Containers themselves are still valid, just not registered globally
-            var directResolve = TestHelper.ResolveFromContainer<ITestService>(container1);
-            Assert.IsNotNull(directResolve);
+            Assert.That(
+                () => TestHelper.ResolveFromContainer<ITestService>(container1),
+                Throws.TypeOf<ObjectDisposedException>());
             
             // Cleanup
             container1.Dispose();
@@ -293,6 +293,31 @@ namespace LightDI.Tests
             
             // Cleanup
             container.Dispose();
+        }
+
+        [Test]
+        public void Dispose_WhenContainerThrows_ShouldDisposeAllContainersAndClearRegistry()
+        {
+            var previousSetting = DiContainerProvider.AllowMultipleGlobalContainers;
+            DiContainerProvider.AllowMultipleGlobalContainers = true;
+
+            var throwingContainer = TestHelper.CreateTestContainer();
+            var trackingContainer = TestHelper.CreateTestContainer();
+            var throwingService = new ThrowingDisposableTestService(
+                new InvalidOperationException("dispose failed"));
+            var trackingService = new TrackingDisposableTestService();
+            throwingContainer.RegisterAsSingleton(throwingService);
+            trackingContainer.RegisterAsSingleton(trackingService);
+
+            Assert.Throws<InvalidOperationException>(() => DiContainerProvider.Dispose());
+
+            Assert.That(throwingService.DisposeCalled, Is.True);
+            Assert.That(trackingService.IsDisposed, Is.True);
+
+            DiContainerProvider.AllowMultipleGlobalContainers = false;
+            var nextContainer = TestHelper.CreateTestContainer();
+            nextContainer.Dispose();
+            DiContainerProvider.AllowMultipleGlobalContainers = previousSetting;
         }
 
         #endregion
@@ -340,6 +365,19 @@ namespace LightDI.Tests
             #pragma warning restore CS0618
             
             Assert.That(exception.Message, Contains.Substring("not registered"));
+        }
+
+        [Test]
+        public void ContainerDispose_WhenServiceThrows_ShouldStillUnregisterContainer()
+        {
+            var container = DiContainerFactory.CreateContainer();
+            container.RegisterAsSingleton(new ThrowingDisposableTestService(
+                new InvalidOperationException("dispose failed")));
+
+            Assert.Throws<InvalidOperationException>(() => container.Dispose());
+
+            var nextContainer = DiContainerFactory.CreateContainer();
+            nextContainer.Dispose();
         }
 
         #endregion

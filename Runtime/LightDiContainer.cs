@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 
 namespace LightDI.Runtime
 {
@@ -240,21 +241,59 @@ internal class LightDiContainer : IDiContainer
 			return;
 		}
 
+		_disposed = true;
+		List<Exception> exceptions = null;
+
 		if (_disposeRegistered)
 		{
 			foreach (var disposable in _disposables)
 			{
-				disposable.Dispose();
+				try
+				{
+					disposable.Dispose();
+				}
+				catch (Exception exception)
+				{
+					(exceptions ??= new List<Exception>()).Add(exception);
+				}
 			}
-			
-			_disposables.Clear();
 		}
 
+		_disposables.Clear();
 		_registrations.Clear();
-		
-		_disposed = true;
-		
-		_onDispose?.Invoke();
+
+		var onDispose = _onDispose;
+		_onDispose = null;
+
+		if (onDispose != null)
+		{
+			try
+			{
+				onDispose.Invoke();
+			}
+			catch (Exception exception)
+			{
+				(exceptions ??= new List<Exception>()).Add(exception);
+			}
+		}
+
+		ThrowDisposeExceptions(exceptions);
+	}
+
+	private static void ThrowDisposeExceptions(List<Exception> exceptions)
+	{
+		if (exceptions == null)
+		{
+			return;
+		}
+
+		if (exceptions.Count == 1)
+		{
+			ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
+			return;
+		}
+
+		throw new AggregateException("Multiple errors occurred while disposing the DI container.", exceptions);
 	}
 
 #if UNITY_EDITOR || UNITY_INCLUDE_TESTS

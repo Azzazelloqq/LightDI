@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 
 namespace LightDI.Runtime
@@ -123,22 +125,36 @@ public static class DiContainerProvider
 	/// </summary>
 	public static void Dispose()
 	{
+		var containers = new List<IDiContainer>();
+
 		foreach (var keyValuePair in _localContainers)
 		{
-			keyValuePair.Value.Dispose();
+			if (_localContainers.TryRemove(keyValuePair.Key, out var localContainer))
+			{
+				containers.Add(localContainer);
+			}
 		}
-		
-		_localContainers.Clear();
-		
+
 		lock (_globalSync)
 		{
-			foreach (var globalContainer in _globalContainers)
-			{
-				globalContainer.Dispose();
-			}
-
+			containers.AddRange(_globalContainers);
 			_globalContainers = Array.Empty<IDiContainer>();
 		}
+
+		List<Exception> exceptions = null;
+		foreach (var container in containers)
+		{
+			try
+			{
+				container.Dispose();
+			}
+			catch (Exception exception)
+			{
+				(exceptions ??= new List<Exception>()).Add(exception);
+			}
+		}
+
+		ThrowDisposeExceptions(exceptions);
 	}
 
 	/// <summary>
@@ -275,6 +291,22 @@ public static class DiContainerProvider
 		}
 
 		_localContainers.TryRemove(assembly, out _);
+	}
+
+	private static void ThrowDisposeExceptions(List<Exception> exceptions)
+	{
+		if (exceptions == null)
+		{
+			return;
+		}
+
+		if (exceptions.Count == 1)
+		{
+			ExceptionDispatchInfo.Capture(exceptions[0]).Throw();
+			return;
+		}
+
+		throw new AggregateException("Multiple errors occurred while disposing DI containers.", exceptions);
 	}
 
 	private static void LogWarning(string message)
